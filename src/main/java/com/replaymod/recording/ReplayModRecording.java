@@ -13,7 +13,11 @@ import com.replaymod.replay.ReplayHandler;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.ClientConnection;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -32,6 +36,7 @@ import org.apache.logging.log4j.Logger;
 //$$ import io.netty.channel.ChannelHandler;
 //#endif
 
+@EventBusSubscriber(modid = ReplayMod.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public class ReplayModRecording implements Module {
 
     private static final Logger LOGGER = LogManager.getLogger();
@@ -64,6 +69,12 @@ public class ReplayModRecording implements Module {
                 }
             }
         }, false);
+    }
+
+    @SubscribeEvent
+    static void registerNetwork(RegisterPayloadHandlersEvent event) {
+        final PayloadRegistrar registrar = event.registrar("1");
+        registrar.commonToClient(Restrictions.ID, Restrictions.CODEC, (payload, context) -> {});
     }
 
     @Override
