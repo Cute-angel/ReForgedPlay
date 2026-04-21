@@ -19,6 +19,7 @@ import com.replaymod.replaystudio.lib.viaversion.api.protocol.packet.State;
 import com.replaymod.replaystudio.protocol.Packet;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import com.replaymod.replaystudio.replay.ReplayMetaData;
+import dev.ryanhcode.sable.mixinterface.entity.entities_stick_sublevels.packet_mixin.PacketActuallyInSubLevelExtension;
 import de.johni0702.minecraft.gui.container.VanillaGuiScreen;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -173,27 +174,32 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
 
     public void save(net.minecraft.network.packet.Packet packet) {
         Packet encoded;
+        String packetFlag = getActuallyInSubLevel(packet);
         try {
             encoded = encodeMcPacket(getConnectionState(), packet);
-            debugReplayPacket("encode", getConnectionState().name(), encoded.getId(), encoded.getBuf().readableBytes(), packet.getClass().getName());
+            debugReplayPacket("encode", getConnectionState().name(), encoded.getId(), encoded.getBuf().readableBytes(), packet.getClass().getName(), packetFlag);
         } catch (Exception e) {
             logger.error("Encoding packet:", e);
             return;
         }
-        save(encoded);
+        save(encoded, packetFlag);
     }
 
     public void save(Packet packet) {
+        save(packet, null);
+    }
+
+    private void save(Packet packet, String packetFlag) {
         // If we're not on the main thread (i.e. we're on the netty thread), then we need to schedule the saving
         // to happen on the main thread so we can guarantee correct ordering of inbound and inject packets.
         // Otherwise, injected packets may end up further down the packet stream than they were supposed to and other
         // inbound packets which may rely on the injected packet would behave incorrectly when played back.
         if (!mc.isOnThread()) {
-            mc.send(() -> save(packet));
+            mc.send(() -> save(packet, packetFlag));
             return;
         }
         try {
-            debugReplayPacket("save", packet.getRegistry().getState().name(), packet.getId(), packet.getBuf().readableBytes(), null);
+            debugReplayPacket("save", packet.getRegistry().getState().name(), packet.getId(), packet.getBuf().readableBytes(), null, packetFlag);
 
             long now = System.currentTimeMillis();
             if (serverWasPaused) {
@@ -450,15 +456,26 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
         );
     }
 
-    private static void debugReplayPacket(String stage, String state, int packetId, int payloadLen, String packetClass) {
+    private static void debugReplayPacket(String stage, String state, int packetId, int payloadLen, String packetClass, String packetFlag) {
         if (!shouldDebugPacket(packetId, payloadLen, packetClass)) {
             return;
         }
-        if (packetClass == null) {
+        if (packetClass == null && packetFlag == null) {
             logger.info("[replay-debug][{}] state={} packetId={} payloadLen={}", stage, state, packetId, payloadLen);
-        } else {
+        } else if (packetFlag == null) {
             logger.info("[replay-debug][{}] state={} packetId={} payloadLen={} class={}", stage, state, packetId, payloadLen, packetClass);
+        } else if (packetClass == null) {
+            logger.info("[replay-debug][{}] state={} packetId={} payloadLen={} actuallyInSubLevel={}", stage, state, packetId, payloadLen, packetFlag);
+        } else {
+            logger.info("[replay-debug][{}] state={} packetId={} payloadLen={} class={} actuallyInSubLevel={}", stage, state, packetId, payloadLen, packetClass, packetFlag);
         }
+    }
+
+    private static String getActuallyInSubLevel(net.minecraft.network.packet.Packet packet) {
+        if (packet instanceof PacketActuallyInSubLevelExtension extension) {
+            return Boolean.toString(extension.sable$isActuallyInSubLevel());
+        }
+        return null;
     }
 
     private static boolean shouldDebugPacket(int packetId, int payloadLen, String packetClass) {
