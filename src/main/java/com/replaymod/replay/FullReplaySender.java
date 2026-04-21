@@ -44,6 +44,8 @@ import net.minecraft.util.math.Vec3d;
 import net.neoforged.neoforge.network.payload.AdvancedOpenScreenPayload;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 //#if MC>=12002
 import net.minecraft.network.packet.s2c.config.ReadyS2CPacket;
@@ -135,6 +137,7 @@ import static com.replaymod.replaystudio.util.Utils.readInt;
  */
 @Sharable
 public class FullReplaySender extends ChannelInboundHandlerAdapter implements ReplaySender {
+    private static final Logger LOGGER = LogManager.getLogger();
     /**
      * These packets are ignored completely during replay.
      */
@@ -1044,6 +1047,7 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
 
                                 // Process packet
                                 if (nextPacket.type == PacketType.Bundle) inBundle = !inBundle;
+                                debugPlaybackBytes("async", nextPacket.bytes, nextPacket.type);
                                 channel.pipeline().fireChannelRead(Unpooled.wrappedBuffer(nextPacket.bytes));                                nextPacket = null;
 
                                 lastTimeStamp = nextTimeStamp;
@@ -1260,6 +1264,7 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
 
                         // Process packet
                         if (pd.type == PacketType.Bundle) inBundle = !inBundle;
+                        debugPlaybackBytes("sync", pd.bytes, pd.type);
                         channel.pipeline().fireChannelRead(Unpooled.wrappedBuffer(pd.bytes));
 
                         // MC as of 1.20.2 relies on autoRead, so it can update the connection state on the main
@@ -1471,6 +1476,34 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
                 entity.tick();
             }
         } while (prevPos.squaredDistanceTo(entity.getPos()) > 0.0001 && ticks++ < 100);
+    }
+
+    private static void debugPlaybackBytes(String stage, byte[] bytes, PacketType type) {
+        VarIntData packetId = readVarInt(bytes);
+        int payloadLen = bytes.length - packetId.bytesRead;
+        if (packetId.value == 9 || packetId.value == 46 || packetId.value == 47 || (payloadLen >= 9 && payloadLen <= 15)) {
+            LOGGER.info("[replay-debug][playback-{}] state={} type={} packetId={} payloadLen={}",
+                    stage, type.getState(), type, packetId.value, payloadLen);
+        }
+    }
+
+    private static VarIntData readVarInt(byte[] bytes) {
+        int numRead = 0;
+        int result = 0;
+        byte read;
+        do {
+            read = bytes[numRead];
+            int value = read & 0x7F;
+            result |= value << (7 * numRead);
+            numRead++;
+            if (numRead > 5) {
+                throw new IllegalArgumentException("VarInt too big");
+            }
+        } while ((read & 0x80) != 0);
+        return new VarIntData(result, numRead);
+    }
+
+    private record VarIntData(int value, int bytesRead) {
     }
 
     private static final class PacketData {

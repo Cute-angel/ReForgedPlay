@@ -103,6 +103,7 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
 
     private static final MinecraftClient mc = getMinecraft();
     private static final Logger logger = LogManager.getLogger();
+    private static final Set<Integer> DEBUG_PACKET_IDS = new HashSet<>(Arrays.asList(9, 46, 47));
 
     private final ReplayMod core;
     private final Path outputPath;
@@ -174,6 +175,7 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
         Packet encoded;
         try {
             encoded = encodeMcPacket(getConnectionState(), packet);
+            debugReplayPacket("encode", getConnectionState().name(), encoded.getId(), encoded.getBuf().readableBytes(), packet.getClass().getName());
         } catch (Exception e) {
             logger.error("Encoding packet:", e);
             return;
@@ -191,6 +193,7 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
             return;
         }
         try {
+            debugReplayPacket("save", packet.getRegistry().getState().name(), packet.getId(), packet.getBuf().readableBytes(), null);
 
             long now = System.currentTimeMillis();
             if (serverWasPaused) {
@@ -316,6 +319,7 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
             ByteBuf buf = (ByteBuf) msg;
             if (buf.readableBytes() > 0) {
                 packet = decodePacket(connectionState, buf);
+                debugReplayPacket("raw", connectionState.name(), packet.getId(), packet.getBuf().readableBytes(), null);
             }
         } else if (msg instanceof net.minecraft.network.packet.Packet) {
             // for integrated server connections MC is passing the packet objects directly, so we need to encode them
@@ -444,6 +448,26 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
                 packetId,
                 com.github.steveice10.netty.buffer.Unpooled.wrappedBuffer(bytes)
         );
+    }
+
+    private static void debugReplayPacket(String stage, String state, int packetId, int payloadLen, String packetClass) {
+        if (!shouldDebugPacket(packetId, payloadLen, packetClass)) {
+            return;
+        }
+        if (packetClass == null) {
+            logger.info("[replay-debug][{}] state={} packetId={} payloadLen={}", stage, state, packetId, payloadLen);
+        } else {
+            logger.info("[replay-debug][{}] state={} packetId={} payloadLen={} class={}", stage, state, packetId, payloadLen, packetClass);
+        }
+    }
+
+    private static boolean shouldDebugPacket(int packetId, int payloadLen, String packetClass) {
+        if (packetClass != null) {
+            return packetClass.contains("ClientboundMoveEntityPacket$Pos")
+                    || packetClass.contains("ClientboundMoveEntityPacket$PosRot")
+                    || packetClass.contains("ClientboundTeleportEntityPacket");
+        }
+        return DEBUG_PACKET_IDS.contains(packetId) || (payloadLen >= 9 && payloadLen <= 15);
     }
 
     public void addMarker(String name) {
