@@ -54,6 +54,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 //#if MC>=12002
 import net.minecraft.network.packet.s2c.config.ReadyS2CPacket;
@@ -160,6 +162,8 @@ import static com.replaymod.replaystudio.util.Utils.readInt;
  */
 @Sharable
 public class FullReplaySender extends ChannelDuplexHandler implements ReplaySender {
+    private static final Logger LOGGER = LogManager.getLogger();
+
     /**
      * These packets are ignored completely during replay.
      */
@@ -473,6 +477,10 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
         PacketByteBuf pb = new PacketByteBuf(bb);
 
         int i = pb.readVarInt();
+        int payloadLen = pb.readableBytes();
+        if (i == 9 || i == 46 || i == 47 || (payloadLen >= 9 && payloadLen <= 15)) {
+            LOGGER.info("[replay-debug][playback] state={} packetId={} payloadLen={}", registry.getState(), i, payloadLen);
+        }
 
         NetworkState state = asMc(registry.getState());
         //#if MC>=12002
@@ -487,6 +495,16 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
         //#endif
         //$$ p.read(pb);
         //#endif
+
+        if (p != null) {
+            String packetClass = p.getClass().getName();
+            if (packetClass.contains("ClientboundMoveEntityPacket$Pos")
+                    || packetClass.contains("ClientboundMoveEntityPacket$PosRot")
+                    || packetClass.contains("ClientboundTeleportEntityPacket")) {
+                LOGGER.info("[replay-debug][playback-decoded] state={} packetId={} payloadLen={} class={}",
+                        registry.getState(), i, payloadLen, packetClass);
+            }
+        }
 
         return p;
     }
